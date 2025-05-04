@@ -5,8 +5,16 @@ import io
 from PIL import Image
 import base64
 
-# Configuração da credencial da conta de serviço
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "google_service_account.json"
+import json
+from google.cloud import vision
+from google.oauth2 import service_account
+
+# Carrega o JSON a partir do secrets
+credentials_info = json.loads(st.secrets["google_service_account.json"])
+credentials = service_account.Credentials.from_service_account_info(credentials_info)
+
+client = vision.ImageAnnotatorClient(credentials=credentials)
+
 
 def extract_text_google(bytes_data):
     client = vision.ImageAnnotatorClient()
