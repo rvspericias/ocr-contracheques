@@ -1,5 +1,3 @@
 streamlit
 google-cloud-vision
-PyPDF2
-pdf2image
-pillow
+Pillow
