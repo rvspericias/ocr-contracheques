@@ -56,18 +56,7 @@ def parse_contracheque_text(texto):
     return pd.DataFrame(resultado)
 
 def main():
-    # Teste de verificação das credenciais (remova após confirmar que está funcionando)
-    try:
-        if "google_service_account" in st.secrets:
-            st.sidebar.success("Credenciais do Google Vision encontradas!")
-        else:
-            st.sidebar.error("Credenciais não encontradas em st.secrets!")
-    except Exception as e:
-        st.sidebar.error(f"Erro ao verificar credenciais: {e}")
-        
-    # Resto do código...
-
-    st.title("OCR de Contracheques (Google Vision API)")
+        st.title("OCR de Contracheques (Google Vision API)")
     st.write("Envie uma imagem ou PDF escaneado do contracheque")
 
     uploaded_file = st.file_uploader("Selecione o arquivo", type=["png", "jpg", "jpeg", "pdf"])
