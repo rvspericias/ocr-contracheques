@@ -20,8 +20,7 @@ st.set_page_config(
 
 # Seção de diagnóstico para verificar a instalação do Poppler
 with st.expander("Diagnóstico de Sistema", expanded=False):
-    st.subheader("Verificação de Sistema")
-
+        st.subheader("Verificação de Sistema")
     except Exception as e:
         st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
         st.exception(e)
