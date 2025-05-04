@@ -1,3 +1,9 @@
 streamlit
 google-cloud-vision
-Pillow
+pillow
+pandas
+pdf2image
+xlsxwriter
+python-dotenv
+opencv-python-headless
+numpy
