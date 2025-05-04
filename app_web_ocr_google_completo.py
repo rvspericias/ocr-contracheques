@@ -10,6 +10,7 @@ import subprocess
 import sys
 from datetime import datetime
 import json
+from google.oauth2 import service_account
 
 # Configuração da página Streamlit
 st.set_page_config(
@@ -17,6 +18,23 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# Configuração das credenciais do Google Cloud
+if "gcp_service_account" in st.secrets:
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"]
+        )
+        st.success("✅ Credenciais do Google Cloud carregadas com sucesso!")
+        # Mostrar apenas o projeto (seguro de exibir)
+        if hasattr(credentials, "_project_id"):
+            st.write(f"Project ID: {credentials._project_id}")
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar credenciais: {str(e)}")
+        credentials = None
+else:
+    st.warning("⚠️ Credenciais do Google Cloud não encontradas. Certifique-se de configurar os secrets.")
+    credentials = None
 
 # Seção de diagnóstico para verificar a instalação do Poppler
 with st.expander("Diagnóstico de Sistema", expanded=False):
@@ -55,6 +73,41 @@ with st.expander("Diagnóstico de Sistema", expanded=False):
 
         except Exception as e:
             st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
+            st.exception(e)
+
+    # Verificar conexão com o Google Vision API
+    if st.button("Testar Conexão com Google Vision API"):
+        try:
+            # Inicializar cliente com as credenciais carregadas
+            client = vision.ImageAnnotatorClient(credentials=credentials)
+            
+            # Criar uma imagem simples para teste
+            from PIL import Image, ImageDraw
+            image = Image.new('RGB', (100, 30), color = (255, 255, 255))
+            d = ImageDraw.Draw(image)
+            d.text((10,10), "TEST", fill=(0,0,0))
+            
+            # Converter para bytes
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG')
+            img_byte_arr.seek(0)
+            
+            # Enviar para a API
+            vision_image = vision.Image(content=img_byte_arr.getvalue())
+            response = client.text_detection(image=vision_image)
+            
+            if response.error.message:
+                st.error(f"❌ Erro na API: {response.error.message}")
+            else:
+                st.success("✅ Conexão com Google Vision API estabelecida com sucesso!")
+                texts = response.text_annotations
+                if texts:
+                    st.write(f"Texto detectado na imagem de teste: '{texts[0].description}'")
+                else:
+                    st.write("Nenhum texto detectado na imagem de teste.")
+                    
+        except Exception as e:
+            st.error(f"❌ Erro ao testar Google Vision API: {str(e)}")
             st.exception(e)
 
     # Informações do sistema
@@ -96,35 +149,48 @@ with st.expander("Diagnóstico de Sistema", expanded=False):
 st.title("🔍 OCR para Contracheques com Google Vision")
 st.write("Este aplicativo extrai dados de contracheques usando reconhecimento óptico de caracteres (OCR).")
 
-# Verificação de secrets para o Google Cloud
-if "gcp_service_account" in st.secrets:
-    st.success("✅ Credenciais do Google Cloud encontradas!")
-    # Não mostre a chave completa, apenas confirme o project_id
-    project_id = st.secrets.gcp_service_account.project_id
-    st.write(f"Project ID: {project_id}")
-else:
-    st.warning("⚠️ Credenciais do Google Cloud não encontradas. Certifique-se de configurar os secrets.")
-
 # Função para extrair texto de imagens usando o Google Vision API
 def extrair_texto_imagem(conteudo_imagem):
     """
     Usa o Google Vision API para extrair texto de uma imagem.
     """
-    # Inicializar o cliente Vision API (usa automaticamente os secrets)
-    client = vision.ImageAnnotatorClient()
-    
-    # Preparar a imagem para análise
-    imagem = vision.Image(content=conteudo_imagem)
-    
-    # Realizar o reconhecimento de texto
-    resposta = client.text_detection(image=imagem)
-    textos = resposta.text_annotations
-    
-    # Verificar se há texto detectado
-    if textos:
-        return textos[0].description
-    else:
-        return "Nenhum texto detectado na imagem."
+    try:
+        # Inicializar o cliente Vision API com as credenciais carregadas anteriormente
+        client = vision.ImageAnnotatorClient(credentials=credentials)
+        
+        # Preparar a imagem para análise
+        imagem = vision.Image(content=conteudo_imagem)
+        
+        # Realizar o reconhecimento de texto
+        resposta = client.text_detection(image=imagem)
+        
+        # Verificar erros de resposta
+        if resposta.error.message:
+            return f"Erro na API Vision: {resposta.error.message}"
+            
+        textos = resposta.text_annotations
+        
+        # Verificar se há texto detectado
+        if textos:
+            return textos[0].description
+        else:
+            return "Nenhum texto detectado na imagem."
+    except Exception as e:
+        return f"Erro ao processar imagem: {str(e)}"
+
+# Fallback para OCR local (usando pytesseract) caso o Google Vision falhe
+def extrair_texto_imagem_fallback(conteudo_imagem):
+    """
+    Tenta usar pytesseract como fallback caso o Google Vision API falhe.
+    Requer instalação do pytesseract e Tesseract OCR.
+    """
+    try:
+        import pytesseract
+        imagem = Image.open(io.BytesIO(conteudo_imagem))
+        texto = pytesseract.image_to_string(imagem, lang='por')
+        return texto
+    except Exception as e:
+        return f"Erro no OCR local: {str(e)}"
 
 # Função para processar arquivos PDF
 def processar_pdf(pdf_bytes):
@@ -148,6 +214,12 @@ def processar_pdf(pdf_bytes):
                     
                     # Extrair texto da imagem
                     texto_pagina = extrair_texto_imagem(img_byte_arr.getvalue())
+                    
+                    # Se o Google Vision falhar, tente o fallback
+                    if texto_pagina.startswith("Erro"):
+                        st.warning(f"Google Vision falhou. Tentando OCR local... {texto_pagina}")
+                        texto_pagina = extrair_texto_imagem_fallback(img_byte_arr.getvalue())
+                    
                     texto_completo += f"\n--- Página {i+1} ---\n" + texto_pagina
                 
                 return texto_completo
@@ -155,10 +227,10 @@ def processar_pdf(pdf_bytes):
             except Exception as e:
                 st.error(f"Erro ao processar PDF: {str(e)}")
                 st.warning("Conversão de PDF pode requerer instalação local. Por favor, tente enviar imagens diretas.")
-                return "Erro na conversão do PDF. Tente enviar imagens diretas."
+                return f"Erro na conversão do PDF: {str(e)}"
     except Exception as e:
         st.error(f"Erro ao processar arquivo: {str(e)}")
-        return "Erro no processamento do arquivo."
+        return f"Erro no processamento do arquivo: {str(e)}"
 
 # Função para processar o texto extraído e identificar dados do contracheque
 def processar_texto_contracheque(texto):
@@ -175,6 +247,10 @@ def processar_texto_contracheque(texto):
         "Descontos": "",
         "Valor Líquido": ""
     }
+    
+    # Se não há texto para processar, retorna o DataFrame vazio
+    if not texto or texto.startswith("Erro"):
+        return pd.DataFrame([dados])
     
     # Divide o texto em linhas para processar
     linhas = texto.split('\n')
@@ -305,6 +381,12 @@ if arquivo is not None:
             st.subheader("Texto Extraído")
             with st.spinner("Extraindo texto da imagem..."):
                 texto_extraido = extrair_texto_imagem(conteudo)
+                
+                # Se o Google Vision falhar, tente o fallback
+                if texto_extraido.startswith("Erro"):
+                    st.warning(f"Google Vision falhou. Tentando OCR local... {texto_extraido}")
+                    texto_extraido = extrair_texto_imagem_fallback(conteudo)
+                
                 st.text_area("Texto Bruto", texto_extraido, height=300)
             
             # Processar o texto e mostrar dados estruturados
