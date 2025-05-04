@@ -22,6 +22,32 @@ st.set_page_config(
 with st.expander("Diagnóstico de Sistema", expanded=False):
     st.subheader("Verificação de Sistema")
 
+    # Verificação direta de comandos do Poppler
+        if st.button("Verificar Instalação do Poppler"):
+        try:
+        # Tentar executar pdftoppm
+            result = subprocess.run(["which", "pdftoppm"], 
+                                           stdout=subprocess.PIPE, 
+                                           stderr=subprocess.PIPE, 
+                                           text=True)
+        
+        if result.stdout:
+            st.success(f"✅ pdftoppm encontrado em: {result.stdout}")
+            
+            # Verificar a versão
+            version_result = subprocess.run(["pdftoppm", "-v"],
+                                          stdout=subprocess.PIPE, 
+                                          stderr=subprocess.PIPE, 
+                                          text=True)
+            version_info = version_result.stderr if version_result.stderr else version_result.stdout
+            st.code(version_info)
+        else:
+            st.error("❌ pdftoppm não encontrado no sistema")
+            st.code(f"Erro: {result.stderr}")
+    except Exception as e:
+        st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
+        st.exception(e)
+
     # Verificar se o Python pode encontrar os executáveis do poppler
     try:
         from pdf2image.pdf2image import pdfinfo_path, pdftoppm_path
