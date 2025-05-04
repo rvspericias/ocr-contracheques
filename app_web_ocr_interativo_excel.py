@@ -31,7 +31,42 @@ def preprocess_image(image: Image.Image) -> Image.Image:
     contrast = ImageEnhance.Contrast(gray).enhance(2.0)
     return ImageOps.autocontrast(contrast)
 
+
 def extrair_dados(texto):
+    dados = {}
+    bloco = "proventos"
+    linhas = texto.split("\n")
+
+    for linha in linhas:
+        linha_limpa = linha.strip()
+        if not linha_limpa:
+            continue
+
+        if "total de vencimentos" in linha.lower():
+            bloco = "descontos"
+            continue
+        elif "total de descontos" in linha.lower():
+            bloco = "totais"
+            continue
+
+        match = re.match(r"(.{5,60}?)\s{1,3}[\d,.]{1,3}\s{1,3}([\d,.]+)$", linha_limpa)
+        if match:
+            rubrica = match.group(1).strip().title()
+            valor = match.group(2).replace(".", "").replace(",", ".")
+            try:
+                valor_float = float(valor)
+                dados[rubrica] = valor_float
+            except:
+                pass
+
+    # Nome e Competência
+    nome = re.search(r"(?i)nome[:\s]*([A-ZÇÃÕÉÊÁÍÓ\s]+)", texto)
+    comp = re.search(r"(?i)(referência|compet[êe]ncia)[\s:]*([A-Za-z]{3,}/?\d{2,4})", texto)
+    dados["Nome"] = nome.group(1).strip() if nome else ""
+    dados["Competência"] = comp.group(2).strip() if comp else ""
+
+    return dados
+
     dados = {}
     nome = re.search(r"(?i)nome[:\s]*([A-Z\s]+)", texto)
     comp = re.search(r"(?i)(referência|compet[êe]ncia)[\s:]*([A-Za-z]{3,}/?\d{2,4})", texto)
@@ -86,7 +121,7 @@ def mes_nome_para_numero(mes):
 st.set_page_config(page_title="Extrator Inteligente de Contracheques", layout="wide")
 st.title("📄 OCR Interativo com Exportação para Excel")
 
-uploaded_file = st.file_uploader("Envie o PDF ou imagem com os contracheques", type=["pdf", "png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Envie o PDF com os contracheques", type=["pdf"])
 
 if uploaded_file:
     st.success("Arquivo carregado. Processando...")
