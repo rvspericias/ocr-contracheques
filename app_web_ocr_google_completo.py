@@ -20,33 +20,42 @@ st.set_page_config(
 
 # Seção de diagnóstico para verificar a instalação do Poppler
 with st.expander("Diagnóstico de Sistema", expanded=False):
-        st.subheader("Verificação de Sistema")
-    except Exception as e:
-        st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
-        st.exception(e)
+    st.subheader("Verificação de Sistema")
 
-    # Verificar se o Python pode encontrar os executáveis do poppler
-    try:
-        from pdf2image.pdf2image import pdfinfo_path, pdftoppm_path
-        st.write(f"📋 Caminhos do Poppler:")
-        st.write(f"- pdfinfo: {pdfinfo_path()}")
-        st.write(f"- pdftoppm: {pdftoppm_path()}")
-        st.success("✅ Caminhos do Poppler encontrados!")
-    except Exception as e:
-        st.error(f"❌ Erro ao encontrar caminhos do Poppler: {str(e)}")
+    # Verificação direta de comandos do Poppler
+    if st.button("Verificar Instalação do Poppler"):
+        try:
+            # Tentar executar o comando `pdftoppm`
+            resultado = subprocess.run(
+                ["which", "pdftoppm"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if resultado.stdout.strip():
+                st.success(f"✅ pdftoppm encontrado em: {resultado.stdout.strip()}")
 
-    # Tentar executar um comando do poppler para verificar a instalação
-    try:
-        result = subprocess.run(["pdftoppm", "-v"], 
-                                stdout=subprocess.PIPE, 
-                                stderr=subprocess.PIPE, 
-                                text=True)
-        version_info = result.stderr if result.stderr else result.stdout
-        st.write(f"📊 Versão do Poppler:")
-        st.code(version_info)
-        st.success("✅ Poppler está funcionando!")
-    except Exception as e:
-        st.error(f"❌ Erro ao executar pdftoppm: {str(e)}")
+                # Verificar a versão
+                resultado_versao = subprocess.run(
+                    ["pdftoppm", "-v"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                informacoes_versao = (
+                    resultado_versao.stderr.strip() 
+                    if resultado_versao.stderr.strip() 
+                    else resultado_versao.stdout.strip()
+                )
+                st.code(informacoes_versao)
+            else:
+                st.error("❌ pdftoppm não encontrado no sistema")
+                st.code(f"Erro: {resultado.stderr.strip()}")
+
+        except Exception as e:
+            st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
+            st.exception(e)
 
     # Informações do sistema
     st.write("🔍 Informações do Sistema:")
