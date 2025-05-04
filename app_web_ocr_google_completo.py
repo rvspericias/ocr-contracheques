@@ -1,106 +1,71 @@
-
 import streamlit as st
 from google.cloud import vision
-from PIL import Image
-import pandas as pd
-import io
-import base64
-import tempfile
+from google.oauth2 import service_account
 import os
+import json
+from PyPDF2 import PdfReader
+from PIL import Image
+import io
+import tempfile
 
-st.set_page_config(layout="wide")
-st.title("📄 OCR de Contracheques com Google Vision")
+st.set_page_config(page_title="Extrator de Contracheques (Google Vision)", layout="wide")
 
-st.markdown("Envie múltiplos arquivos **PDF ou imagens (PNG, JPG)** contendo contracheques para extrair dados estruturados.")
+st.title("📄 OCR de Contracheques (Google Vision API)")
+st.markdown("Envie um ou mais arquivos de contracheques (PDFs ou imagens):")
 
-uploaded_files = st.file_uploader("Envie múltiplos arquivos (PDF ou imagens)", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Envie múltiplos arquivos", type=["pdf", "png", "jpg", "jpeg"], accept_multiple_files=True)
 
-compet_ini = st.text_input("Filtrar por competência inicial (MM/AAAA)", "")
-compet_fim = st.text_input("Filtrar por competência final (MM/AAAA)", "")
+# Carrega as credenciais do Google pela variável de segredo
+creds_info = json.loads(os.environ["google_service_account.json"])
+credentials = service_account.Credentials.from_service_account_info(creds_info)
+client = vision.ImageAnnotatorClient(credentials=credentials)
 
-client = vision.ImageAnnotatorClient()
 
-def extract_text_google(img_bytes):
-    image = vision.Image(content=img_bytes)
+# Função para extrair texto usando Google Vision
+def extract_text_google(image_bytes):
+    image = vision.Image(content=image_bytes)
     response = client.document_text_detection(image=image)
-    return response.full_text_annotation.text if response.full_text_annotation.text else ""
+    return response.full_text_annotation.text if response.full_text_annotation else ""
 
-def extrair_dados(texto, nome_arquivo):
-    import re
-    rubricas = {}
-    nome = ""
-    comp = ""
 
-    linhas = texto.split("\n")
-    for linha in linhas:
-        m = re.match(r"(.*?)(?:\s{2,}|\t+)([\d.,]+)$", linha.strip())
-        if m:
-            chave = m.group(1).strip().title()
-            valor = m.group(2).replace(".", "").replace(",", ".")
-            try:
-                rubricas[chave] = float(valor)
-            except:
-                pass
+# Função para converter páginas do PDF em imagens
+def extract_images_from_pdf(pdf_file):
+    from pdf2image import convert_from_bytes
+    return convert_from_bytes(pdf_file.read(), dpi=300)
 
-    m_nome = re.search(r"(?i)nome[:\s]*([A-ZÇÃÕÉÊÁÍÓ\s]+)", texto)
-    m_comp = re.search(r"(?i)(refer[êe]ncia|compet[êe]ncia)[:\s]*([A-Za-z]{3,}/?\d{2,4})", texto)
 
-    if m_nome: nome = m_nome.group(1).strip()
-    if m_comp: comp = m_comp.group(2).strip()
+# Função para processar cada arquivo
+def process_uploaded_file(uploaded_file):
+    pages_text = []
 
-    dados = {"Arquivo": nome_arquivo, "Nome": nome, "Competência": comp}
-    dados.update(rubricas)
-    return dados
+    if uploaded_file.name.lower().endswith(".pdf"):
+        images = extract_images_from_pdf(uploaded_file)
+        for i, image in enumerate(images):
+            with tempfile.NamedTemporaryFile(suffix=".png") as temp_img:
+                image.save(temp_img.name)
+                with open(temp_img.name, "rb") as f:
+                    text = extract_text_google(f.read())
+                    pages_text.append((f"{uploaded_file.name} - página {i+1}", text))
 
-registros = []
-
-if uploaded_files:
-    with st.spinner("🔍 Extraindo texto dos arquivos..."):
-        for arquivo in uploaded_files:
-            nome = arquivo.name
-            bytes_data = arquivo.read()
-            texto = extract_text_google(bytes_data)
-            dados = extrair_dados(texto, nome)
-            registros.append(dados)
-
-    if registros:
-        df = pd.DataFrame(registros)
-        colunas_disponiveis = list(df.columns[3:])
-
-        st.markdown("### ✅ Rubricas disponíveis")
-        rubricas_escolhidas = st.multiselect("Selecione as rubricas que deseja exportar", options=colunas_disponiveis)
-
-        if rubricas_escolhidas:
-            df_filtrado = df[["Arquivo", "Nome", "Competência"] + rubricas_escolhidas]
-
-            if compet_ini and compet_fim:
-                def parse_comp(c):
-                    import re
-                    meses = {
-                        "janeiro": "01", "fevereiro": "02", "março": "03", "abril": "04", "maio": "05", "junho": "06",
-                        "julho": "07", "agosto": "08", "setembro": "09", "outubro": "10", "novembro": "11", "dezembro": "12"
-                    }
-                    c = c.lower()
-                    for mes_nome, mes_num in meses.items():
-                        if mes_nome in c:
-                            ano = re.search(r"\d{4}", c)
-                            if ano: return f"{mes_num}/{ano.group(0)}"
-                    return c
-
-                df_filtrado["CompetênciaNum"] = df_filtrado["Competência"].apply(parse_comp)
-                df_filtrado = df_filtrado[
-                    (df_filtrado["CompetênciaNum"] >= compet_ini) &
-                    (df_filtrado["CompetênciaNum"] <= compet_fim)
-                ]
-
-            st.markdown("### 🧾 Pré-visualização da planilha")
-            st.dataframe(df_filtrado.drop(columns=["CompetênciaNum"], errors="ignore"), use_container_width=True)
-
-            buffer = io.BytesIO()
-            df_filtrado.drop(columns=["CompetênciaNum"], errors="ignore").to_excel(buffer, index=False)
-            b64 = base64.b64encode(buffer.getvalue()).decode()
-            st.markdown(f"📥 [Clique aqui para baixar Excel](data:application/octet-stream;base64,{b64})", unsafe_allow_html=True)
-        else:
-            st.warning("Selecione pelo menos uma rubrica para continuar.")
     else:
-        st.warning("Nenhum dado foi extraído dos arquivos enviados.")
+        image = Image.open(uploaded_file).convert("RGB")
+        with io.BytesIO() as output:
+            image.save(output, format="PNG")
+            text = extract_text_google(output.getvalue())
+            pages_text.append((uploaded_file.name, text))
+
+    return pages_text
+
+
+# Processa todos os arquivos enviados
+if uploaded_files:
+    with st.spinner("Processando arquivos..."):
+        resultados = []
+        for file in uploaded_files:
+            resultado = process_uploaded_file(file)
+            resultados.extend(resultado)
+
+    # Exibe os resultados
+    for pagina, texto in resultados:
+        st.subheader(f"📎 {pagina}")
+        st.code(texto)
