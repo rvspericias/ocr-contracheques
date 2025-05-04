@@ -74,6 +74,7 @@ with st.expander("Diagnóstico de Sistema", expanded=False):
         else:
             st.error("❌ pdftoppm não encontrado no sistema")
             st.code(f"Erro: {result.stderr}")
+
     except Exception as e:
         st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
         st.exception(e)
