@@ -1,7 +1,7 @@
 
 # OCR de Contracheques - App Web (Google Vision API)
 
-Este é um app web simples feito com Streamlit que extrai texto de contracheques escaneados (PDF ou imagem) usando a API OCR do Google Cloud Vision.
+Este é um app web feito com Streamlit que extrai texto de contracheques escaneados (PDF ou imagem) usando a API OCR do Google Cloud Vision.
 
 ## Como publicar
 
