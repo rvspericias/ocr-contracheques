@@ -1,7 +1,8 @@
 
 streamlit
-requests
-PyMuPDF
+pytesseract
 Pillow
+PyMuPDF
+requests
 pandas
 openpyxl

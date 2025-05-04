@@ -1,19 +1,21 @@
 
-# OCR de Contracheques - App Web (Google Vision API)
+# MVP 2.0 – OCR Inteligente de Contracheques
 
-Este é um app web feito com Streamlit que extrai texto de contracheques escaneados (PDF ou imagem) usando a API OCR do Google Cloud Vision.
+Este app utiliza OCR híbrido (Google Vision + Tesseract) e lógica por blocos para extrair dados estruturados de contracheques em PDF e imagem. Ideal para uso por peritos contábeis trabalhistas.
 
-## Como publicar
+## Funcionalidades
+
+- Upload múltiplo de PDFs e imagens
+- Extração separada por blocos: Proventos, Descontos, Totais
+- OCR com fallback: Google Vision → Tesseract
+- Filtro por competência (MM/AAAA)
+- Seleção de rubricas a exportar
+- Exportação para Excel com nome, competência e rubricas
+
+## Como publicar no Streamlit Cloud
 
 1. Crie um repositório no GitHub
-2. Envie todos os arquivos deste pacote para lá
-3. Acesse https://streamlit.io/cloud e conecte seu GitHub
-4. Escolha este repositório e clique em "Deploy"
+2. Envie os arquivos deste zip
+3. Vá para https://streamlit.io/cloud
+4. Conecte sua conta GitHub e selecione o script `app_ocr_mvp2_contracheques.py`
 
-## Tecnologias usadas
-
-- Streamlit
-- Google Cloud Vision OCR
-- PyMuPDF para leitura de PDF
-- Pillow para imagens
-- pandas + openpyxl para exportação Excel
