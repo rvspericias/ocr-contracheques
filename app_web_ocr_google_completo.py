@@ -400,3 +400,6 @@ def process_file(arquivo, pre_processar=True, usar_ml=False):
         # Processar conforme o tipo de arquivo
         if arquivo.type == "application/pdf":
             with col1:
+    st.subheader("Imagem Carregada")
+    imagem = Image.open(io.BytesIO(conteudo))
+    st.image(imagem, width=400)
