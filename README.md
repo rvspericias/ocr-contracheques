@@ -15,4 +15,5 @@ Este é um app web feito com Streamlit que extrai texto de contracheques escanea
 - Streamlit
 - Google Cloud Vision OCR
 - PyMuPDF para leitura de PDF
-- Pillow para manipulação de imagens
+- Pillow para imagens
+- pandas + openpyxl para exportação Excel
