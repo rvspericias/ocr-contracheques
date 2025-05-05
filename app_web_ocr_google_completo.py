@@ -780,4 +780,23 @@ with st.expander("📊 Histórico e Relatórios", expanded=False):
                     # Criar um buffer na memória
                     buffer = io.BytesIO()
                     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                        df_historico.to_excel(writer, sheet_
+                        df_historico.to_excel(writer, sheet_name='Contracheques', index=False)
+                        
+                        # Formatar colunas monetárias no Excel
+                        workbook = writer.book
+                        worksheet = writer.sheets['Contracheques']
+                        formato_moeda = workbook.add_format({'num_format': 'R$ #,##0.00'})
+                        
+                        # Aplicar formato monetário para colunas específicas
+                        for idx, col in enumerate(df_historico.columns):
+                            if col in ['salario_base', 'descontos', 'valor_liquido']:
+                                worksheet.set_column(idx, idx, 15, formato_moeda)
+                    
+                    # Download do arquivo
+                    buffer.seek(0)
+                    st.download_button(
+                        label="Download Excel",
+                        data=buffer,
+                        file_name=f"contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.ms-excel"
+                    )
