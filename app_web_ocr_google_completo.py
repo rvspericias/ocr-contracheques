@@ -11,6 +11,11 @@ import sys
 from datetime import datetime
 import json
 from google.oauth2 import service_account
+import sqlite3
+import os.path
+from pathlib import Path
+import matplotlib.pyplot as plt
+import hashlib
 
 # Configuração da página Streamlit
 st.set_page_config(
@@ -18,6 +23,183 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# Função para inicializar o banco de dados
+def inicializar_banco_dados():
+    """
+    Cria o banco de dados SQLite e as tabelas necessárias, se não existirem.
+    """
+    # Garantir que o diretório de dados existe
+    data_dir = Path("./data")
+    data_dir.mkdir(exist_ok=True)
+    
+    # Caminho para o banco de dados
+    db_path = data_dir / "contracheques.db"
+    
+    # Conectar ao banco de dados (cria se não existir)
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    
+    # Criar tabela de contracheques se não existir
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contracheques (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            matricula TEXT,
+            cargo TEXT,
+            mes_referencia TEXT,
+            salario_base REAL,
+            descontos REAL,
+            valor_liquido REAL,
+            data_processamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            arquivo_fonte TEXT,
+            hash_arquivo TEXT,
+            validado BOOLEAN DEFAULT 0,
+            observacoes TEXT
+        )
+    ''')
+    
+    # Criar tabela para armazenar as imagens processadas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS arquivos_processados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome_arquivo TEXT,
+            hash_arquivo TEXT UNIQUE,
+            data_processamento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            tipo_arquivo TEXT,
+            texto_extraido TEXT
+        )
+    ''')
+    
+    # Commit e fechar conexão
+    conn.commit()
+    conn.close()
+    
+    return str(db_path)
+
+# Função para calcular hash de arquivo
+def calcular_hash_arquivo(conteudo_bytes):
+    """
+    Calcula o hash SHA-256 do conteúdo do arquivo.
+    Útil para identificar arquivos duplicados.
+    """
+    return hashlib.sha256(conteudo_bytes).hexdigest()
+
+# Função para diagnóstico do banco de dados
+def diagnosticar_banco_dados():
+    """
+    Verifica se o banco de dados está funcionando corretamente.
+    """
+    try:
+        conn = sqlite3.connect(st.session_state['db_path'])
+        cursor = conn.cursor()
+        
+        # Verificar tabelas
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tabelas = cursor.fetchall()
+        tabelas = [tab[0] for tab in tabelas]
+        
+        # Verificar contagem de registros
+        contagens = {}
+        for tabela in tabelas:
+            cursor.execute(f"SELECT COUNT(*) FROM {tabela}")
+            contagens[tabela] = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return {
+            "status": "ok",
+            "caminho_bd": st.session_state['db_path'],
+            "tabelas": tabelas,
+            "contagens": contagens
+        }
+    except Exception as e:
+        return {
+            "status": "erro",
+            "mensagem": str(e)
+        }
+
+# Função para consultar histórico
+def consultar_historico(data_inicio=None, data_fim=None, filtro_nome=None, filtro_matricula=None):
+    """
+    Consulta o histórico de contracheques processados com possibilidade de filtros.
+    
+    Args:
+        data_inicio: Data inicial (opcional)
+        data_fim: Data final (opcional)
+        filtro_nome: Filtro por nome (opcional)
+        filtro_matricula: Filtro por matrícula (opcional)
+        
+    Returns:
+        DataFrame com os resultados da consulta
+    """
+    conn = sqlite3.connect(st.session_state['db_path'])
+    
+    # Construir a consulta SQL com filtros dinâmicos
+    query = "SELECT * FROM contracheques WHERE 1=1"
+    params = []
+    
+    if data_inicio:
+        query += " AND date(data_processamento) >= ?"
+        params.append(data_inicio)
+    
+    if data_fim:
+        query += " AND date(data_processamento) <= ?"
+        params.append(data_fim)
+    
+    if filtro_nome:
+        query += " AND nome LIKE ?"
+        params.append(f"%{filtro_nome}%")
+    
+    if filtro_matricula:
+        query += " AND matricula LIKE ?"
+        params.append(f"%{filtro_matricula}%")
+    
+    # Ordenar por data mais recente primeiro
+    query += " ORDER BY data_processamento DESC"
+    
+    # Executar a consulta
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    
+    return df
+
+# Função para gerar gráfico de valor líquido
+def gerar_grafico_valor_liquido(df):
+    """
+    Gera um gráfico de linha com a evolução dos valores líquidos por mês.
+    
+    Args:
+        df: DataFrame com os dados dos contracheques
+    """
+    # Verificar se há dados suficientes
+    if len(df) < 2:
+        st.warning("São necessários pelo menos 2 registros para gerar gráficos comparativos.")
+        return
+    
+    # Tentar extrair mês e ano da coluna mes_referencia
+    df['mes_ref_formatado'] = pd.to_datetime(df['data_processamento']).dt.strftime('%m/%Y')
+    
+    # Preparar dados para o gráfico
+    df_grafico = df.sort_values('data_processamento')
+    
+    # Criar gráfico
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(df_grafico['mes_ref_formatado'], df_grafico['valor_liquido'], marker='o', linestyle='-')
+    
+    # Formatar eixos
+    ax.set_xlabel('Mês/Ano')
+    ax.set_ylabel('Valor Líquido (R$)')
+    ax.set_title('Evolução do Valor Líquido')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Exibir gráfico
+    st.pyplot(fig)
+
+# Inicializar banco de dados
+db_path = inicializar_banco_dados()
+st.session_state['db_path'] = db_path
 
 # Configuração das credenciais do Google Cloud
 if "gcp_service_account" in st.secrets:
@@ -109,6 +291,18 @@ with st.expander("Diagnóstico de Sistema", expanded=False):
         except Exception as e:
             st.error(f"❌ Erro ao testar Google Vision API: {str(e)}")
             st.exception(e)
+
+    # Diagnóstico do banco de dados
+    if st.button("Verificar Banco de Dados"):
+        resultado = diagnosticar_banco_dados()
+        if resultado["status"] == "ok":
+            st.success("✅ Banco de dados funcionando corretamente")
+            st.write(f"Caminho: {resultado['caminho_bd']}")
+            st.write("Tabelas encontradas:")
+            for tabela in resultado["tabelas"]:
+                st.write(f"- {tabela}: {resultado['contagens'][tabela]} registros")
+        else:
+            st.error(f"❌ Erro no banco de dados: {resultado['mensagem']}")
 
     # Informações do sistema
     st.write("🔍 Informações do Sistema:")
@@ -300,27 +494,80 @@ def processar_texto_contracheque(texto):
     df = pd.DataFrame([dados])
     return df
 
-# Função para salvar os dados extraídos
-def salvar_dados_extraidos(dados, nome_arquivo):
+# Função para salvar dados extraídos
+def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido):
     """
-    Salva os dados extraídos em um formato estruturado.
+    Salva os dados extraídos no banco de dados SQLite.
+    
+    Args:
+        dados: DataFrame pandas com os dados estruturados
+        nome_arquivo: Nome do arquivo processado
+        conteudo_arquivo: Bytes do arquivo original (para cálculo de hash)
+        texto_extraido: Texto bruto extraído do documento
+    
+    Returns:
+        id: ID do registro inserido no banco de dados
     """
-    # Criar um diretório para armazenar os dados se não existir
-    diretorio = "dados_extraidos"
-    if not os.path.exists(diretorio):
-        os.makedirs(diretorio)
+    # Calcular hash do arquivo
+    hash_arquivo = calcular_hash_arquivo(conteudo_arquivo)
     
-    # Gerar um nome de arquivo baseado na data e hora atual
-    agora = datetime.now().strftime("%Y%m%d_%H%M%S")
-    nome_base = os.path.splitext(nome_arquivo)[0]
-    nome_arquivo_saida = f"{diretorio}/{nome_base}_{agora}.json"
+    # Conectar ao banco de dados
+    conn = sqlite3.connect(st.session_state['db_path'])
+    cursor = conn.cursor()
     
-    # Converter DataFrame para dicionário e salvar como JSON
-    dados_dict = dados.to_dict(orient='records')[0]
-    with open(nome_arquivo_saida, 'w', encoding='utf-8') as f:
-        json.dump(dados_dict, f, ensure_ascii=False, indent=4)
-    
-    return nome_arquivo_saida
+    try:
+        # Verificar se este arquivo já foi processado antes
+        cursor.execute("SELECT id FROM arquivos_processados WHERE hash_arquivo = ?", (hash_arquivo,))
+        arquivo_existente = cursor.fetchone()
+        
+        if arquivo_existente:
+            # Arquivo já processado, obtém o ID existente
+            st.warning(f"Atenção: Este arquivo já foi processado anteriormente (ID: {arquivo_existente[0]}).")
+            conn.close()
+            return arquivo_existente[0]
+        
+        # Primeiro, inserir registro na tabela de arquivos processados
+        tipo_arquivo = nome_arquivo.split('.')[-1] if '.' in nome_arquivo else 'desconhecido'
+        cursor.execute('''
+            INSERT INTO arquivos_processados (nome_arquivo, hash_arquivo, tipo_arquivo, texto_extraido)
+            VALUES (?, ?, ?, ?)
+        ''', (nome_arquivo, hash_arquivo, tipo_arquivo, texto_extraido))
+        
+        arquivo_id = cursor.lastrowid
+        
+        # Converter DataFrame para dicionário
+        dados_dict = dados.to_dict(orient='records')[0]
+        
+        # Inserir dados na tabela de contracheques
+        cursor.execute('''
+            INSERT INTO contracheques 
+            (nome, matricula, cargo, mes_referencia, salario_base, descontos, valor_liquido, 
+             arquivo_fonte, hash_arquivo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            dados_dict.get('Nome', ''),
+            dados_dict.get('Matrícula', ''),
+            dados_dict.get('Cargo', ''),
+            dados_dict.get('Mês/Ano', ''),
+            dados_dict.get('Salário Base', 0.0),
+            dados_dict.get('Descontos', 0.0),
+            dados_dict.get('Valor Líquido', 0.0),
+            nome_arquivo,
+            hash_arquivo
+        ))
+        
+        # Commit e fechar conexão
+        conn.commit()
+        conn.close()
+        
+        return arquivo_id
+        
+    except Exception as e:
+        # Em caso de erro, fazer rollback
+        conn.rollback()
+        conn.close()
+        st.error(f"Erro ao salvar dados no banco: {str(e)}")
+        return None
 
 # Interface principal para upload de arquivo
 st.subheader("📤 Upload de Contracheque")
@@ -368,8 +615,9 @@ if arquivo is not None:
             
             # Opção para salvar os dados
             if st.button("Salvar Dados Extraídos"):
-                caminho_salvo = salvar_dados_extraidos(df_dados, arquivo.name)
-                st.success(f"Dados salvos com sucesso em {caminho_salvo}")
+                caminho_salvo = salvar_dados_extraidos(df_dados, arquivo.name, conteudo, texto_extraido)
+                if caminho_salvo:
+                    st.success(f"Dados salvos com sucesso no banco de dados (ID: {caminho_salvo})")
     
     elif arquivo.type in ["image/png", "image/jpeg", "image/jpg"]:
         with col1:
@@ -397,11 +645,104 @@ if arquivo is not None:
             
             # Opção para salvar os dados
             if st.button("Salvar Dados Extraídos"):
-                caminho_salvo = salvar_dados_extraidos(df_dados, arquivo.name)
-                st.success(f"Dados salvos com sucesso em {caminho_salvo}")
+                caminho_salvo = salvar_dados_extraidos(df_dados, arquivo.name, conteudo, texto_extraido)
+                if caminho_salvo:
+                    st.success(f"Dados salvos com sucesso no banco de dados (ID: {caminho_salvo})")
     
     else:
         st.error("Formato de arquivo não suportado. Por favor, envie uma imagem (PNG, JPG) ou PDF.")
+
+# Interface de histórico e relatórios
+with st.expander("📊 Histórico e Relatórios", expanded=False):
+    st.subheader("Contracheques Processados")
+    
+    # Filtros para consulta
+    col1, col2 = st.columns(2)
+    with col1:
+        data_inicio = st.date_input("Data Inicial", value=None)
+    with col2:
+        data_fim = st.date_input("Data Final", value=None)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        filtro_nome = st.text_input("Filtrar por Nome", "")
+    with col2:
+        filtro_matricula = st.text_input("Filtrar por Matrícula", "")
+    
+    # Botão para consultar
+    if st.button("Consultar Histórico"):
+        # Converter datas para string no formato correto, se existirem
+        data_inicio_str = data_inicio.strftime("%Y-%m-%d") if data_inicio else None
+        data_fim_str = data_fim.strftime("%Y-%m-%d") if data_fim else None
+        
+        # Consultar banco de dados
+        df_historico = consultar_historico(
+            data_inicio_str, 
+            data_fim_str, 
+            filtro_nome, 
+            filtro_matricula
+        )
+        
+        # Exibir resultados
+        if not df_historico.empty:
+            st.write(f"Foram encontrados {len(df_historico)} registros.")
+            st.dataframe(df_historico)
+            
+            # Opção para exportar para Excel
+            if st.button("Exportar para Excel"):
+                # Criar um buffer na memória
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_historico.to_excel(writer, sheet_name='Contracheques', index=False)
+                
+                # Download do arquivo
+                buffer.seek(0)
+                st.download_button(
+                    label="Download Excel",
+                    data=buffer,
+                    file_name=f"contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.ms-excel"
+                )
+        else:
+            st.info("Nenhum registro encontrado com os filtros selecionados.")
+
+# Seção de gráficos
+with st.expander("📈 Análise Gráfica", expanded=False):
+    st.subheader("Gráficos e Visualizações")
+    
+    # Filtros
+
+# Seção de gráficos
+with st.expander("📈 Análise Gráfica", expanded=False):
+    st.subheader("Gráficos e Visualizações")
+    
+    # Filtros para gráficos
+    filtro_matricula_grafico = st.text_input("Matrícula para Análise", "", key="matricula_grafico")
+    
+    if st.button("Gerar Gráficos"):
+        if filtro_matricula_grafico:
+            # Consultar dados para a matrícula específica
+            conn = sqlite3.connect(st.session_state['db_path'])
+            df_grafico = pd.read_sql_query(
+                "SELECT * FROM contracheques WHERE matricula = ? ORDER BY data_processamento",
+                conn, 
+                params=[filtro_matricula_grafico]
+            )
+            conn.close()
+            
+            if not df_grafico.empty:
+                st.write(f"Análise para matrícula: {filtro_matricula_grafico}")
+                
+                # Gerar gráfico de valor líquido
+                gerar_grafico_valor_liquido(df_grafico)
+                
+                # Tabela de dados utilizados
+                st.subheader("Dados utilizados na análise")
+                st.dataframe(df_grafico)
+            else:
+                st.warning(f"Nenhum registro encontrado para a matrícula {filtro_matricula_grafico}.")
+        else:
+            st.warning("Por favor, informe uma matrícula para gerar os gráficos.")
 
 # Informações adicionais e instruções
 with st.expander("ℹ️ Informações sobre o aplicativo"):
@@ -410,7 +751,9 @@ with st.expander("ℹ️ Informações sobre o aplicativo"):
     1. Carregue um arquivo de contracheque (imagem ou PDF).
     2. O aplicativo processará automaticamente o arquivo e extrairá o texto.
     3. Os dados identificados serão exibidos na tabela "Dados Estruturados".
-    4. Você pode salvar os dados extraídos para uso futuro.
+    4. Você pode salvar os dados extraídos no banco de dados para uso futuro.
+    5. Use a seção "Histórico e Relatórios" para consultar dados anteriores.
+    6. Use a seção "Análise Gráfica" para visualizar tendências ao longo do tempo.
     
     ## Limitações
     - A precisão do OCR pode variar dependendo da qualidade da imagem.
@@ -418,35 +761,40 @@ with st.expander("ℹ️ Informações sobre o aplicativo"):
     - Recomenda-se verificar manualmente os dados extraídos para garantir a precisão.
     
     ## Privacidade
-    - Os dados são processados localmente e não são armazenados permanentemente.
-    - Os arquivos salvos ficam apenas no servidor local e não são compartilhados.
+    - Os dados são armazenados localmente no banco de dados SQLite.
+    - Nenhuma informação é enviada para servidores externos, exceto a imagem para o Google Vision API.
     """)
 
 # Seção para comparar contracheques (funcionalidade futura)
-with st.expander("📊 Comparar Contracheques (Em Desenvolvimento)"):
+with st.expander("📋 Funcionalidades Avançadas (Em Desenvolvimento)"):
     st.write("""
-    ### Funcionalidade de Comparação
+    ### Próximas Funcionalidades
     
-    Esta seção permitirá comparar diferentes contracheques ao longo do tempo para:
-    - Rastrear mudanças no salário base
-    - Monitorar a evolução dos descontos
-    - Visualizar o histórico do valor líquido
-    - Identificar descontos incomuns ou variações inesperadas
+    Estamos trabalhando em recursos adicionais para melhorar a experiência:
     
-    **Próximas Funcionalidades:**
-    - Carregamento de múltiplos contracheques
-    - Visualização em gráficos de tendências
-    - Exportação de relatórios comparativos
-    - Análise automática de discrepâncias
+    **1. Validação Automática de Dados**
+    - Comparação com sistemas internos de RH
+    - Detecção automática de discrepâncias
+    - Alertas para inconsistências
+    
+    **2. Dashboards Avançados**
+    - Análise comparativa entre departamentos
+    - Visualização de tendências salariais
+    - Detecção de anomalias em pagamentos
+    
+    **3. Integrações com Sistemas de RH**
+    - Exportação direta para sistemas de folha de pagamento
+    - Sincronização automática com cadastros de colaboradores
+    - Geração de relatórios para compliance
     """)
     
-    # Placeholder para gráfico futuro
-    st.info("Funcionalidade em desenvolvimento. Em breve você poderá visualizar gráficos comparativos aqui.")
+    # Placeholder para recursos futuros
+    st.info("Estas funcionalidades estão em desenvolvimento. Fique atento às próximas atualizações!")
 
 # Rodapé da aplicação
 st.markdown("---")
 st.markdown("**OCR de Contracheques** | Desenvolvido com Google Vision API e Streamlit")
-st.markdown("Versão 1.0 | © 2023 - Todos os direitos reservados")
+st.markdown("Versão 1.1 | © 2023 - Todos os direitos reservados")
 
 # Contador de processamentos (simples)
 if 'contador_processamentos' not in st.session_state:
@@ -478,3 +826,25 @@ modo_seguro = st.sidebar.checkbox("Modo de segurança", value=True,
 # Confirmação quando o modo de segurança está ativado
 if modo_seguro and arquivo is not None:
     st.sidebar.success("🔒 Documento processado com modo de segurança ativado.")
+
+# Backup do banco de dados
+st.sidebar.subheader("🔄 Backup de Dados")
+if st.sidebar.button("Fazer Backup do Banco"):
+    try:
+        # Ler o arquivo do banco de dados
+        with open(st.session_state['db_path'], 'rb') as f:
+            dados_banco = f.read()
+        
+        # Criar nome do arquivo de backup com timestamp
+        nome_backup = f"backup_contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        
+        # Oferecer para download
+        st.sidebar.download_button(
+            label="Download do Backup",
+            data=dados_banco,
+            file_name=nome_backup,
+            mime="application/octet-stream"
+        )
+        st.sidebar.success("✅ Backup pronto para download!")
+    except Exception as e:
+        st.sidebar.error(f"❌ Erro ao criar backup: {str(e)}")
