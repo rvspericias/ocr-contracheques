@@ -218,131 +218,6 @@ else:
     st.warning("⚠️ Credenciais do Google Cloud não encontradas. Certifique-se de configurar os secrets.")
     credentials = None
 
-# Seção de diagnóstico para verificar a instalação do Poppler
-with st.expander("Diagnóstico de Sistema", expanded=False):
-    st.subheader("Verificação de Sistema")
-
-    # Verificação direta de comandos do Poppler
-    if st.button("Verificar Instalação do Poppler"):
-        try:
-            # Tentar executar o comando `pdftoppm`
-            resultado = subprocess.run(
-                ["which", "pdftoppm"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            if resultado.stdout.strip():
-                st.success(f"✅ pdftoppm encontrado em: {resultado.stdout.strip()}")
-
-                # Verificar a versão
-                resultado_versao = subprocess.run(
-                    ["pdftoppm", "-v"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                informacoes_versao = (
-                    resultado_versao.stderr.strip() 
-                    if resultado_versao.stderr.strip() 
-                    else resultado_versao.stdout.strip()
-                )
-                st.code(informacoes_versao)
-            else:
-                st.error("❌ pdftoppm não encontrado no sistema")
-                st.code(f"Erro: {resultado.stderr.strip()}")
-
-        except Exception as e:
-            st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
-            st.exception(e)
-
-    # Verificar conexão com o Google Vision API
-    if st.button("Testar Conexão com Google Vision API"):
-        try:
-            # Inicializar cliente com as credenciais carregadas
-            client = vision.ImageAnnotatorClient(credentials=credentials)
-            
-            # Criar uma imagem simples para teste
-            from PIL import Image, ImageDraw
-            image = Image.new('RGB', (100, 30), color = (255, 255, 255))
-            d = ImageDraw.Draw(image)
-            d.text((10,10), "TEST", fill=(0,0,0))
-            
-            # Converter para bytes
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='PNG')
-            img_byte_arr.seek(0)
-            
-            # Enviar para a API
-            vision_image = vision.Image(content=img_byte_arr.getvalue())
-            response = client.text_detection(image=vision_image)
-            
-            if response.error.message:
-                st.error(f"❌ Erro na API: {response.error.message}")
-            else:
-                st.success("✅ Conexão com Google Vision API estabelecida com sucesso!")
-                texts = response.text_annotations
-                if texts:
-                    st.write(f"Texto detectado na imagem de teste: '{texts[0].description}'")
-                else:
-                    st.write("Nenhum texto detectado na imagem de teste.")
-                    
-        except Exception as e:
-            st.error(f"❌ Erro ao testar Google Vision API: {str(e)}")
-            st.exception(e)
-
-    # Diagnóstico do banco de dados
-    if st.button("Verificar Banco de Dados"):
-        resultado = diagnosticar_banco_dados()
-        if resultado["status"] == "ok":
-            st.success("✅ Banco de dados funcionando corretamente")
-            st.write(f"Caminho: {resultado['caminho_bd']}")
-            st.write("Tabelas encontradas:")
-            for tabela in resultado["tabelas"]:
-                st.write(f"- {tabela}: {resultado['contagens'][tabela]} registros")
-        else:
-            st.error(f"❌ Erro no banco de dados: {resultado['mensagem']}")
-
-    # Informações do sistema
-    st.write("🔍 Informações do Sistema:")
-    st.write(f"- Python: {sys.version}")
-    st.write(f"- Sistema Operacional: {os.name}")
-    st.write(f"- Path do Python: {sys.executable}")
-
-    # Teste de processamento PDF
-    if st.button("Testar processamento de PDF"):
-        try:
-            # Criar um PDF simples para teste
-            from reportlab.pdfgen import canvas
-            import io
-            from pdf2image import convert_from_bytes
-            
-            # Criar um PDF em memória
-            pdf_buffer = io.BytesIO()
-            c = canvas.Canvas(pdf_buffer)
-            c.drawString(100, 750, "Teste de PDF para Poppler")
-            c.save()
-            pdf_bytes = pdf_buffer.getvalue()
-            
-            # Tentar converter para imagem
-            st.write("Convertendo PDF para imagem...")
-            with tempfile.TemporaryDirectory() as path:
-                images = convert_from_bytes(pdf_bytes, output_folder=path)
-                st.write(f"✅ PDF convertido com sucesso! Gerou {len(images)} imagem(ns).")
-                
-                # Mostrar a primeira imagem
-                if images:
-                    st.image(images[0], caption="Imagem extraída do PDF")
-            
-        except Exception as e:
-            st.error(f"❌ Erro ao processar PDF: {str(e)}")
-            st.exception(e)
-
-# Título principal do aplicativo
-st.title("🔍 OCR para Contracheques com Google Vision")
-st.write("Este aplicativo extrai dados de contracheques usando reconhecimento óptico de caracteres (OCR).")
-
 # Função para extrair texto de imagens usando o Google Vision API
 def extrair_texto_imagem(conteudo_imagem):
     """
@@ -487,7 +362,7 @@ def processar_texto_contracheque(texto):
             # Tenta extrair o valor após "valor líquido"
             partes = linha.split()
             for j, parte in enumerate(partes):
-                if "líquido" in parte.lower() or "liquido" in parte.lower() and j < len(partes) - 1:
+                if ("líquido" in parte.lower() or "liquido" in parte.lower()) and j < len(partes) - 1:
                     dados["Valor Líquido"] = partes[j+1].replace("R$", "").strip()
     
     # Converte os dados para DataFrame para melhor visualização
@@ -568,6 +443,131 @@ def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido
         conn.close()
         st.error(f"Erro ao salvar dados no banco: {str(e)}")
         return None
+
+# Seção de diagnóstico para verificar a instalação do Poppler
+with st.expander("Diagnóstico de Sistema", expanded=False):
+    st.subheader("Verificação de Sistema")
+
+    # Verificação direta de comandos do Poppler
+    if st.button("Verificar Instalação do Poppler"):
+        try:
+            # Tentar executar o comando `pdftoppm`
+            resultado = subprocess.run(
+                ["which", "pdftoppm"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if resultado.stdout.strip():
+                st.success(f"✅ pdftoppm encontrado em: {resultado.stdout.strip()}")
+
+                # Verificar a versão
+                resultado_versao = subprocess.run(
+                    ["pdftoppm", "-v"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                informacoes_versao = (
+                    resultado_versao.stderr.strip() 
+                    if resultado_versao.stderr.strip() 
+                    else resultado_versao.stdout.strip()
+                )
+                st.code(informacoes_versao)
+            else:
+                st.error("❌ pdftoppm não encontrado no sistema")
+                st.code(f"Erro: {resultado.stderr.strip()}")
+
+        except Exception as e:
+            st.error(f"❌ Erro ao verificar pdftoppm: {str(e)}")
+            st.exception(e)
+
+    # Verificar conexão com o Google Vision API
+    if st.button("Testar Conexão com Google Vision API"):
+        try:
+            # Inicializar cliente com as credenciais carregadas
+            client = vision.ImageAnnotatorClient(credentials=credentials)
+            
+            # Criar uma imagem simples para teste
+            from PIL import Image, ImageDraw
+            image = Image.new('RGB', (100, 30), color = (255, 255, 255))
+            d = ImageDraw.Draw(image)
+            d.text((10,10), "TEST", fill=(0,0,0))
+            
+            # Converter para bytes
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG')
+            img_byte_arr.seek(0)
+            
+            # Enviar para a API
+            vision_image = vision.Image(content=img_byte_arr.getvalue())
+            response = client.text_detection(image=vision_image)
+            
+            if response.error.message:
+                st.error(f"❌ Erro na API: {response.error.message}")
+            else:
+                st.success("✅ Conexão com Google Vision API estabelecida com sucesso!")
+                texts = response.text_annotations
+                if texts:
+                    st.write(f"Texto detectado na imagem de teste: '{texts[0].description}'")
+                else:
+                    st.write("Nenhum texto detectado na imagem de teste.")
+                    
+        except Exception as e:
+            st.error(f"❌ Erro ao testar Google Vision API: {str(e)}")
+            st.exception(e)
+
+    # Diagnóstico do banco de dados
+    if st.button("Verificar Banco de Dados"):
+        resultado = diagnosticar_banco_dados()
+        if resultado["status"] == "ok":
+            st.success("✅ Banco de dados funcionando corretamente")
+            st.write(f"Caminho: {resultado['caminho_bd']}")
+            st.write("Tabelas encontradas:")
+            for tabela in resultado["tabelas"]:
+                st.write(f"- {tabela}: {resultado['contagens'][tabela]} registros")
+        else:
+            st.error(f"❌ Erro no banco de dados: {resultado['mensagem']}")
+
+    # Informações do sistema
+    st.write("🔍 Informações do Sistema:")
+    st.write(f"- Python: {sys.version}")
+    st.write(f"- Sistema Operacional: {os.name}")
+    st.write(f"- Path do Python: {sys.executable}")
+
+    # Teste de processamento PDF
+    if st.button("Testar processamento de PDF"):
+        try:
+            # Criar um PDF simples para teste
+            from reportlab.pdfgen import canvas
+            import io
+            from pdf2image import convert_from_bytes
+            
+            # Criar um PDF em memória
+            pdf_buffer = io.BytesIO()
+            c = canvas.Canvas(pdf_buffer)
+            c.drawString(100, 750, "Teste de PDF para Poppler")
+            c.save()
+            pdf_bytes = pdf_buffer.getvalue()
+            
+            # Tentar converter para imagem
+            st.write("Convertendo PDF para imagem...")
+            with tempfile.TemporaryDirectory() as path:
+                images = convert_from_bytes(pdf_bytes, output_folder=path)
+                st.write(f"✅ PDF convertido com sucesso! Gerou {len(images)} imagem(ns).")
+                
+                # Mostrar a primeira imagem
+                if images:
+                    st.image(images[0], caption="Imagem extraída do PDF")
+            
+        except Exception as e:
+            st.error(f"❌ Erro ao processar PDF: {str(e)}")
+            st.exception(e)
+
+# Título principal do aplicativo
+st.title("🔍 OCR para Contracheques com Google Vision")
+st.write("Este aplicativo extrai dados de contracheques usando reconhecimento óptico de caracteres (OCR).")
 
 # Interface principal para upload de arquivo
 st.subheader("📤 Upload de Contracheque")
@@ -705,12 +705,6 @@ with st.expander("📊 Histórico e Relatórios", expanded=False):
                 )
         else:
             st.info("Nenhum registro encontrado com os filtros selecionados.")
-
-# Seção de gráficos
-with st.expander("📈 Análise Gráfica", expanded=False):
-    st.subheader("Gráficos e Visualizações")
-    
-    # Filtros
 
 # Seção de gráficos
 with st.expander("📈 Análise Gráfica", expanded=False):
