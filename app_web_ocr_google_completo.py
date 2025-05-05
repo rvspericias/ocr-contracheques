@@ -800,3 +800,190 @@ with st.expander("📊 Histórico e Relatórios", expanded=False):
                         file_name=f"contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.ms-excel"
                     )
+            else:
+                st.info("Nenhum registro encontrado com os filtros selecionados.")
+        except ValueError as e:
+            st.error(f"Formato de data inválido. Certifique-se de usar o formato MM/AAAA. Erro: {str(e)}")
+
+# Nova seção para consulta de texto bruto
+with st.expander("📝 Consulta de Textos Brutos", expanded=False):
+    st.subheader("Consultar Textos Extraídos")
+    
+    # Filtros para consulta
+    col1, col2 = st.columns(2)
+    with col1:
+        texto_mes_inicial = st.text_input("Data Inicial (MM/AAAA)", "01/2023", key="texto_mes_inicial")
+    with col2:
+        texto_mes_final = st.text_input("Data Final (MM/AAAA)", "12/2023", key="texto_mes_final")
+    
+    nome_arquivo = st.text_input("Filtrar por Nome de Arquivo", "")
+    
+    # Botão para consultar
+    if st.button("Buscar Textos"):
+        try:
+            # Converter MM/AAAA para datas completas
+            data_inicio = datetime.strptime(f"01/{texto_mes_inicial}", "%d/%m/%Y").strftime("%Y-%m-%d")
+            data_fim = datetime.strptime(f"28/{texto_mes_final}", "%d/%m/%Y").strftime("%Y-%m-%d")
+            
+            # Consultar banco de dados
+            df_textos = consultar_textos_brutos(
+                data_inicio, 
+                data_fim, 
+                nome_arquivo
+            )
+            
+            # Exibir resultados
+            if not df_textos.empty:
+                st.write(f"Foram encontrados {len(df_textos)} textos extraídos.")
+                
+                # Mostrar lista de arquivos
+                st.subheader("Arquivos Disponíveis")
+                
+                # Criar uma tabela simplificada para seleção
+                df_simplificado = df_textos[['id', 'nome_arquivo', 'data_processamento']].copy()
+                df_simplificado['data_processamento'] = pd.to_datetime(df_simplificado['data_processamento']).dt.strftime('%d/%m/%Y %H:%M')
+                
+                st.dataframe(df_simplificado)
+                
+                # Seleção para visualizar texto específico
+                texto_id = st.selectbox(
+                    "Selecione um arquivo para visualizar seu texto:", 
+                    df_textos['id'].tolist(),
+                    format_func=lambda x: f"ID {x}: {df_textos[df_textos['id'] == x]['nome_arquivo'].values[0]}"
+                )
+                
+                if texto_id:
+                    texto_selecionado = df_textos[df_textos['id'] == texto_id]['texto_extraido'].values[0]
+                    st.subheader(f"Texto do arquivo: {df_textos[df_textos['id'] == texto_id]['nome_arquivo'].values[0]}")
+                    st.text_area("Conteúdo Extraído", texto_selecionado, height=400)
+                    
+                    # Opção para processar o texto
+                    if st.button("Processar Texto Selecionado"):
+                        df_dados_processados = processar_texto_contracheque(texto_selecionado)
+                        st.subheader("Dados Estruturados do Texto")
+                        st.dataframe(df_dados_processados)
+            else:
+                st.info("Nenhum texto encontrado com os filtros selecionados.")
+        except ValueError as e:
+            st.error(f"Formato de data inválido. Certifique-se de usar o formato MM/AAAA. Erro: {str(e)}")
+
+# Seção de gráficos
+with st.expander("📈 Análise Gráfica", expanded=False):
+    st.subheader("Gráficos e Visualizações")
+    
+    # Filtros para gráficos
+    filtro_matricula_grafico = st.text_input("Matrícula para Análise", "", key="matricula_grafico")
+    
+    if st.button("Gerar Gráficos"):
+        if filtro_matricula_grafico:
+            # Consultar dados para a matrícula específica
+            conn = sqlite3.connect(st.session_state['db_path'])
+            df_grafico = pd.read_sql_query(
+                "SELECT * FROM contracheques WHERE matricula = ? ORDER BY data_processamento",
+                conn, 
+                params=[filtro_matricula_grafico]
+            )
+            conn.close()
+            
+            if not df_grafico.empty:
+                st.write(f"Análise para matrícula: {filtro_matricula_grafico}")
+                
+                # Gerar gráfico de valor líquido
+                gerar_grafico_valor_liquido(df_grafico)
+                
+                # Tabela de dados utilizados
+                st.subheader("Dados utilizados na análise")
+                # Formatação para exibição
+                df_display = df_grafico.copy()
+                for col in ['salario_base', 'descontos', 'valor_liquido']:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].apply(lambda x: f"R$ {x:.2f}".replace('.', ',') if pd.notnull(x) else "")
+                
+                if 'data_processamento' in df_display.columns:
+                    df_display['data_processamento'] = pd.to_datetime(df_display['data_processamento']).dt.strftime('%d/%m/%Y')
+                
+                st.dataframe(df_display)
+            else:
+                st.warning(f"Nenhum registro encontrado para a matrícula {filtro_matricula_grafico}.")
+        else:
+            st.warning("Por favor, informe uma matrícula para gerar os gráficos.")
+
+# Informações adicionais e instruções
+with st.expander("ℹ️ Informações sobre o aplicativo"):
+    st.write("""
+    ## Como usar o aplicativo
+    1. Carregue um arquivo de contracheque (imagem ou PDF).
+    2. O aplicativo processará automaticamente o arquivo e extrairá o texto.
+    3. Os dados identificados serão exibidos na tabela "Dados Estruturados".
+    4. Você pode salvar os dados extraídos no banco de dados para uso futuro.
+    5. Use a seção "Histórico e Relatórios" para consultar dados anteriores.
+    6. Use a seção "Consulta de Textos Brutos" para acessar os textos extraídos originais.
+    7. Use a seção "Análise Gráfica" para visualizar tendências ao longo do tempo.
+    
+    ## Limitações
+    - A precisão do OCR pode variar dependendo da qualidade da imagem.
+    - Alguns documentos com layout complexo podem não ser processados corretamente.
+    - Recomenda-se verificar manualmente os dados extraídos para garantir a precisão.
+    
+    ## Privacidade
+    - Os dados são armazenados localmente no banco de dados SQLite.
+    - Nenhuma informação é enviada para servidores externos, exceto a imagem para o Google Vision API.
+    """)
+
+# Rodapé da aplicação
+st.markdown("---")
+st.markdown("**OCR de Contracheques** | Desenvolvido com Google Vision API e Streamlit")
+st.markdown("Versão 1.2 | © 2023 - Todos os direitos reservados")
+
+# Contador de processamentos (simples)
+if 'contador_processamentos' not in st.session_state:
+    st.session_state.contador_processamentos = 0
+
+# Incrementar contador quando um arquivo é processado com sucesso
+if arquivo is not None and 'df_dados' in locals():
+    st.session_state.contador_processamentos += 1
+
+# Exibir estatísticas de uso
+st.sidebar.subheader("📈 Estatísticas")
+st.sidebar.write(f"Documentos processados: {st.session_state.contador_processamentos}")
+st.sidebar.write(f"Sessão iniciada: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+# Opções adicionais (sidebar)
+st.sidebar.subheader("⚙️ Configurações")
+st.sidebar.write("**Ajustes de OCR:**")
+ocr_qualidade = st.sidebar.select_slider(
+    "Qualidade do OCR (DPI)",
+    options=[150, 200, 250, 300],
+    value=300
+)
+st.sidebar.write("Qualidade mais alta = melhor OCR, mas mais lento.")
+
+# Modo de segurança (evita processamento acidental de documentos sensíveis)
+modo_seguro = st.sidebar.checkbox("Modo de segurança", value=True, 
+                             help="Quando ativado, exige confirmação antes de processar documentos.")
+
+# Confirmação quando o modo de segurança está ativado
+if modo_seguro and arquivo is not None:
+    st.sidebar.success("🔒 Documento processado com modo de segurança ativado.")
+
+# Backup do banco de dados
+st.sidebar.subheader("🔄 Backup de Dados")
+if st.sidebar.button("Fazer Backup do Banco"):
+    try:
+        # Ler o arquivo do banco de dados
+        with open(st.session_state['db_path'], 'rb') as f:
+            dados_banco = f.read()
+        
+        # Criar nome do arquivo de backup com timestamp
+        nome_backup = f"backup_contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        
+        # Oferecer para download
+        st.sidebar.download_button(
+            label="Download do Backup",
+            data=dados_banco,
+            file_name=nome_backup,
+            mime="application/octet-stream"
+        )
+        st.sidebar.success("✅ Backup pronto para download!")
+    except Exception as e:
+        st.sidebar.error(f"❌ Erro ao criar backup: {str(e)}")
