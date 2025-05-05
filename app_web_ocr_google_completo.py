@@ -714,7 +714,6 @@ if arquivo is not None:
             # Processar o texto e mostrar dados estruturados
             st.subheader("Dados Estruturados")
             with st.spinner("Processando informações..."):
-
             # Processar o texto e mostrar dados estruturados
             st.subheader("Dados Estruturados")
             with st.spinner("Processando informações..."):
