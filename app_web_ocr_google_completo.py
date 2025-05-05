@@ -325,49 +325,52 @@ def processar_texto_contracheque(texto):
     linhas = texto.split('\n')
     
     # Procura por padrões específicos em cada linha
-    for i, linha in enumerate(linhas):
+    for linha in linhas:
         linha_lower = linha.lower()
         
-        # Busca por padrões de nome e outros dados pessoais
+        # Busca por "Nome:"
         if "nome:" in linha_lower:
             dados["Nome"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        if "matrícula:" in linha_lower or "matricula:" in linha_lower:
+        # Busca por "Matrícula:"
+        elif "matrícula" in linha_lower or "matricula" in linha_lower:
             dados["Matrícula"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        if "cargo:" in linha_lower:
+        # Busca por "Cargo:"
+        elif "cargo:" in linha_lower:
             dados["Cargo"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        # Busca pelo mês e ano de referência
-        if "referência:" in linha_lower or "referencia:" in linha_lower or "mês:" in linha_lower:
+        # Busca pelo mês e ano
+        elif "referência:" in linha_lower or "referencia:" in linha_lower or "mês/ano:" in linha_lower:
             dados["Mês/Ano"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        # Busca por valores financeiros
-        if "salário base" in linha_lower or "salario base" in linha_lower:
-            # Tenta extrair o valor após "salário base"
+        # Busca por "Salário Base:"
+        elif "salário base" in linha_lower or "salario base" in linha_lower:
             partes = linha.split()
-            for j, parte in enumerate(partes):
-                if "base" in parte.lower() and j < len(partes) - 1:
-                    dados["Salário Base"] = partes[j+1].replace("R$", "").strip()
+            try:
+                # Tenta pegar o último elemento como valor
+                dados["Salário Base"] = partes[-1].replace("R$", "").strip()
+            except IndexError:
+                dados["Salário Base"] = "Não encontrado"
         
-        if "total descontos" in linha_lower:
-            # Tenta extrair o valor após "total descontos"
+        # Busca por "Descontos"
+        elif "descontos totais" in linha_lower or "total descontos" in linha_lower:
             partes = linha.split()
-            for j, parte in enumerate(partes):
-                if "descontos" in parte.lower() and j < len(partes) - 1:
-                    dados["Descontos"] = partes[j+1].replace("R$", "").strip()
+            try:
+                dados["Descontos"] = partes[-1].replace("R$", "").strip()
+            except IndexError:
+                dados["Descontos"] = "Não encontrado"
         
-        # Busca pelo valor líquido
-        if "valor líquido" in linha_lower or "liquido" in linha_lower:
-            # Tenta extrair o valor após "valor líquido"
+        # Busca por "Valor Líquido:"
+        elif "valor líquido" in linha_lower or "liquido" in linha_lower:
             partes = linha.split()
-            for j, parte in enumerate(partes):
-                if ("líquido" in parte.lower() or "liquido" in parte.lower()) and j < len(partes) - 1:
-                    dados["Valor Líquido"] = partes[j+1].replace("R$", "").strip()
+            try:
+                dados["Valor Líquido"] = partes[-1].replace("R$", "").strip()
+            except IndexError:
+                dados["Valor Líquido"] = "Não encontrado"
     
     # Converte os dados para DataFrame para melhor visualização
-    df = pd.DataFrame([dados])
-    return df
+    return pd.DataFrame([dados])
 
 # Função para salvar dados extraídos
 def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido):
@@ -413,7 +416,31 @@ def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido
         # Converter DataFrame para dicionário
         dados_dict = dados.to_dict(orient='records')[0]
         
-        # Inserir dados na tabela de contracheques
+        # Valores padrão para campos numéricos
+        salario_base = 0.0
+        descontos = 0.0
+        valor_liquido = 0.0
+        
+        # Tentar converter valores para float
+        try:
+            if dados_dict.get('Salário Base'):
+                salario_base = float(dados_dict.get('Salário Base').replace('.', '').replace(',', '.'))
+        except (ValueError, AttributeError):
+            pass
+            
+        try:
+            if dados_dict.get('Descontos'):
+                descontos = float(dados_dict.get('Descontos').replace('.', '').replace(',', '.'))
+        except (ValueError, AttributeError):
+            pass
+            
+        try:
+            if dados_dict.get('Valor Líquido'):
+                valor_liquido = float(dados_dict.get('Valor Líquido').replace('.', '').replace(',', '.'))
+        except (ValueError, AttributeError):
+            pass
+        
+                # Inserir dados na tabela de contracheques
         cursor.execute('''
             INSERT INTO contracheques 
             (nome, matricula, cargo, mes_referencia, salario_base, descontos, valor_liquido, 
@@ -424,9 +451,9 @@ def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido
             dados_dict.get('Matrícula', ''),
             dados_dict.get('Cargo', ''),
             dados_dict.get('Mês/Ano', ''),
-            dados_dict.get('Salário Base', 0.0),
-            dados_dict.get('Descontos', 0.0),
-            dados_dict.get('Valor Líquido', 0.0),
+            salario_base,
+            descontos,
+            valor_liquido,
             nome_arquivo,
             hash_arquivo
         ))
@@ -444,7 +471,11 @@ def salvar_dados_extraidos(dados, nome_arquivo, conteudo_arquivo, texto_extraido
         st.error(f"Erro ao salvar dados no banco: {str(e)}")
         return None
 
-# Seção de diagnóstico para verificar a instalação do Poppler
+# Título principal do aplicativo
+st.title("🔍 OCR para Contracheques com Google Vision")
+st.write("Este aplicativo extrai dados de contracheques usando reconhecimento óptico de caracteres (OCR).")
+
+# Seção de diagnóstico para verificar a instalação do Poppler e Google Vision API
 with st.expander("Diagnóstico de Sistema", expanded=False):
     st.subheader("Verificação de Sistema")
 
@@ -565,10 +596,6 @@ with st.expander("Diagnóstico de Sistema", expanded=False):
             st.error(f"❌ Erro ao processar PDF: {str(e)}")
             st.exception(e)
 
-# Título principal do aplicativo
-st.title("🔍 OCR para Contracheques com Google Vision")
-st.write("Este aplicativo extrai dados de contracheques usando reconhecimento óptico de caracteres (OCR).")
-
 # Interface principal para upload de arquivo
 st.subheader("📤 Upload de Contracheque")
 arquivo = st.file_uploader("Faça upload de uma imagem ou PDF do contracheque", 
@@ -656,12 +683,12 @@ if arquivo is not None:
 with st.expander("📊 Histórico e Relatórios", expanded=False):
     st.subheader("Contracheques Processados")
     
-    # Filtros para consulta
+    # Filtros para consulta - Usado formato de texto para MM/AAAA para facilitar
     col1, col2 = st.columns(2)
     with col1:
-        data_inicio = st.date_input("Data Inicial", value=None)
+        mes_inicial = st.text_input("Data Inicial (MM/AAAA)", "01/2023")
     with col2:
-        data_fim = st.date_input("Data Final", value=None)
+        mes_final = st.text_input("Data Final (MM/AAAA)", "12/2023")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -669,42 +696,67 @@ with st.expander("📊 Histórico e Relatórios", expanded=False):
     with col2:
         filtro_matricula = st.text_input("Filtrar por Matrícula", "")
     
-    # Botão para consultar
+   # Botão para consultar
     if st.button("Consultar Histórico"):
-        # Converter datas para string no formato correto, se existirem
-        data_inicio_str = data_inicio.strftime("%Y-%m-%d") if data_inicio else None
-        data_fim_str = data_fim.strftime("%Y-%m-%d") if data_fim else None
-        
-        # Consultar banco de dados
-        df_historico = consultar_historico(
-            data_inicio_str, 
-            data_fim_str, 
-            filtro_nome, 
-            filtro_matricula
-        )
-        
-        # Exibir resultados
-        if not df_historico.empty:
-            st.write(f"Foram encontrados {len(df_historico)} registros.")
-            st.dataframe(df_historico)
+        try:
+            # Converter MM/AAAA para datas completas (primeiro dia do mês)
+            data_inicio = datetime.strptime(f"01/{mes_inicial}", "%d/%m/%Y").strftime("%Y-%m-%d")
+            # Último dia do mês para a data final (simplificação)
+            data_fim = datetime.strptime(f"28/{mes_final}", "%d/%m/%Y").strftime("%Y-%m-%d")
             
-            # Opção para exportar para Excel
-            if st.button("Exportar para Excel"):
-                # Criar um buffer na memória
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_historico.to_excel(writer, sheet_name='Contracheques', index=False)
+            # Consultar banco de dados
+            df_historico = consultar_historico(
+                data_inicio, 
+                data_fim, 
+                filtro_nome, 
+                filtro_matricula
+            )
+            
+            # Exibir resultados
+            if not df_historico.empty:
+                st.write(f"Foram encontrados {len(df_historico)} registros.")
+            
+            # Formatação de valores monetários para exibição
+                df_display = df_historico.copy()
+                for col in ['salario_base', 'descontos', 'valor_liquido']:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].apply(lambda x: f"R$ {x:.2f}".replace('.', ',') if pd.notnull(x) else "")
                 
-                # Download do arquivo
-                buffer.seek(0)
-                st.download_button(
-                    label="Download Excel",
-                    data=buffer,
-                    file_name=f"contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.ms-excel"
-                )
-        else:
-            st.info("Nenhum registro encontrado com os filtros selecionados.")
+                # Formatar data de processamento para formato brasileiro
+                if 'data_processamento' in df_display.columns:
+                    df_display['data_processamento'] = pd.to_datetime(df_display['data_processamento']).dt.strftime('%d/%m/%Y %H:%M')
+                
+                st.dataframe(df_display)
+                
+                # Opção para exportar para Excel
+                if st.button("Exportar para Excel"):
+                    # Criar um buffer na memória
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                        df_historico.to_excel(writer, sheet_name='Contracheques', index=False)
+                        
+                        # Formatar colunas monetárias no Excel
+                        workbook = writer.book
+                        worksheet = writer.sheets['Contracheques']
+                        formato_moeda = workbook.add_format({'num_format': 'R$ #,##0.00'})
+                        
+                        # Aplicar formato monetário para colunas específicas
+                        for idx, col in enumerate(df_historico.columns):
+                            if col in ['salario_base', 'descontos', 'valor_liquido']:
+                                worksheet.set_column(idx, idx, 15, formato_moeda)
+                    
+                    # Download do arquivo
+                    buffer.seek(0)
+                    st.download_button(
+                        label="Download Excel",
+                        data=buffer,
+                        file_name=f"contracheques_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.ms-excel"
+                    )
+            else:
+                st.info("Nenhum registro encontrado com os filtros selecionados.")
+        except ValueError as e:
+            st.error(f"Formato de data inválido. Certifique-se de usar o formato MM/AAAA. Erro: {str(e)}")
 
 # Seção de gráficos
 with st.expander("📈 Análise Gráfica", expanded=False):
@@ -732,7 +784,16 @@ with st.expander("📈 Análise Gráfica", expanded=False):
                 
                 # Tabela de dados utilizados
                 st.subheader("Dados utilizados na análise")
-                st.dataframe(df_grafico)
+                # Formatação para exibição
+                df_display = df_grafico.copy()
+                for col in ['salario_base', 'descontos', 'valor_liquido']:
+                    if col in df_display.columns:
+                        df_display[col] = df_display[col].apply(lambda x: f"R$ {x:.2f}".replace('.', ',') if pd.notnull(x) else "")
+                
+                if 'data_processamento' in df_display.columns:
+                    df_display['data_processamento'] = pd.to_datetime(df_display['data_processamento']).dt.strftime('%d/%m/%Y')
+                
+                st.dataframe(df_display)
             else:
                 st.warning(f"Nenhum registro encontrado para a matrícula {filtro_matricula_grafico}.")
         else:
@@ -842,3 +903,6 @@ if st.sidebar.button("Fazer Backup do Banco"):
         st.sidebar.success("✅ Backup pronto para download!")
     except Exception as e:
         st.sidebar.error(f"❌ Erro ao criar backup: {str(e)}")
+
+
+                            
