@@ -412,59 +412,52 @@ def processar_texto_contracheque(texto):
     # Retorna os dados como DataFrame para exibição na interface
     return pd.DataFrame([dados])
 
-# Dentro do arquivo `app_web_ocr_google_completo.py`:
-
-# Função para processar texto extraído de um contracheque
-def processar_texto_contracheque(texto):
+# Função para salvar dados extraídos e texto bruto
+def salvar_dados_extraidos(df_dados, nome_arquivo, conteudo_bytes, texto_extraido):
     """
-    Processa o texto bruto extraído do OCR para organizar os dados do contracheque.
+    Salva os dados estruturados e o texto bruto extraído no banco de dados.
+    
+    Args:
+        df_dados: DataFrame com os dados estruturados
+        nome_arquivo: Nome do arquivo processado
+        conteudo_bytes: Conteúdo binário do arquivo
+        texto_extraido: Texto extraído do arquivo
+        
+    Returns:
+        ID do registro inserido
     """
-    # Adicione o código fornecido aqui
-    dados = {
-        "Nome": "",
-        "Matrícula": "",
-        "Cargo": "",
-        "Mês/Ano": "",
-        "Salário Base": 0.0,
-        "Descontos": 0.0,
-        "Valor Líquido": 0.0
-    }
+    # Calcular hash do arquivo para identificação única
+    hash_arquivo = calcular_hash_arquivo(conteudo_bytes)
     
-    if not texto:
-        return pd.DataFrame([dados])
+    # Conectar ao banco de dados
+    conn = sqlite3.connect(st.session_state['db_path'])
+    cursor = conn.cursor()
     
-    # Ajustando para o formato do texto extraído
-    linhas = texto.split("\n")
-    
-    # Procurar pelo Nome e Matrícula
-    for linha in linhas:
-        if "nome" in linha.lower():
-            dados["Nome"] = linha.split(":")[1].strip() if ":" in linha else linha.strip()
-        if "matrícula" in linha.lower():
-            dados["Matrícula"] = linha.split(":")[1].strip() if ":" in linha else linha.strip()
-        if "cargo" in linha.lower():
-            dados["Cargo"] = linha.split(":")[1].strip() if ":" in linha else linha.strip()
-    
-    # Procurar pelo Mês/Ano
-    mes_ano = re.search(r"(\b[A-Za-z]+(?: \d{4})?\b)", texto)
-    if mes_ano:
-        dados["Mês/Ano"] = mes_ano.group(0)
-    
-    # Detectar valores e rubricas
-    rubricas = {
-        "Salário Base": r"salário base|salario base",
-        "Descontos": r"descontos?",
-        "Valor Líquido": r"valor líquido|liquido a receber"
-    }
-    
-    for chave, padrao in rubricas.items():
-        match = re.search(f"{padrao}\s*([\d.,]+)", texto, re.IGNORECASE)
-        if match:
-            dados[chave] = float(match.group(1).replace(".", "").replace(",", "."))
-    
-    # Criar um DataFrame para estruturar os dados
-    df = pd.DataFrame([dados])
-    return df
+    try:
+        # Primeiro, salvar o arquivo e texto extraído
+        try:
+            cursor.execute('''
+                INSERT INTO arquivos_processados 
+                (nome_arquivo, hash_arquivo, tipo_arquivo, texto_extraido)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                nome_arquivo,
+                hash_arquivo,
+                nome_arquivo.split('.')[-1] if '.' in nome_arquivo else 'unknown',
+                texto_extraido
+            ))
+            arquivo_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            # Se o hash já existe, recuperar o ID existente
+            cursor.execute("SELECT id FROM arquivos_processados WHERE hash_arquivo = ?", (hash_arquivo,))
+            resultado = cursor.fetchone()
+            if resultado:
+                arquivo_id = resultado[0]
+                st.warning(f"Arquivo com hash {hash_arquivo} já existe no banco (ID: {arquivo_id}).")
+            else:
+                st.error("Erro ao verificar arquivo existente.")
+                conn.close()
+                return None
         
         # Em seguida, salvar os dados estruturados
         # Converter valores para float
