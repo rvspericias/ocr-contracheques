@@ -711,10 +711,7 @@ if arquivo is not None:
                 
                 st.text_area("Texto Bruto", texto_extraido, height=300)
             
-            # Processar o texto e mostrar dados estruturados
-            st.subheader("Dados Estruturados")
-            with st.spinner("Processando informações..."):
-            # Processar o texto e mostrar dados estruturados
+                       # Processar o texto e mostrar dados estruturados
             st.subheader("Dados Estruturados")
             with st.spinner("Processando informações..."):
                 df_dados = processar_texto_contracheque(texto_extraido)
