@@ -304,7 +304,7 @@ def processar_pdf(pdf_bytes):
 # Função para processar o texto extraído e identificar dados do contracheque
 def processar_texto_contracheque(texto):
     """
-    Analisa o texto extraído para identificar informações do contracheque.
+    Analisa o texto extraído do documento PDF para identificar informações do contracheque.
     """
     # Inicializa o dicionário para armazenar os valores encontrados
     dados = {
@@ -324,52 +324,63 @@ def processar_texto_contracheque(texto):
     # Divide o texto em linhas para processar
     linhas = texto.split('\n')
     
-    # Procura por padrões específicos em cada linha
+    # Itera pelas linhas para encontrar os padrões esperados
     for linha in linhas:
         linha_lower = linha.lower()
         
-        # Busca por "Nome:"
+        # Captura o Nome
         if "nome:" in linha_lower:
             dados["Nome"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        # Busca por "Matrícula:"
+        # Captura a Matrícula
         elif "matrícula" in linha_lower or "matricula" in linha_lower:
             dados["Matrícula"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
-        
-        # Busca por "Cargo:"
+
+        # Captura o Cargo
         elif "cargo:" in linha_lower:
             dados["Cargo"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        # Busca pelo mês e ano
+        # Captura o Mês/Ano
         elif "referência:" in linha_lower or "referencia:" in linha_lower or "mês/ano:" in linha_lower:
             dados["Mês/Ano"] = linha.split(":", 1)[1].strip() if ":" in linha else ""
         
-        # Busca por "Salário Base:"
+        # Captura o Salário Base
         elif "salário base" in linha_lower or "salario base" in linha_lower:
-            partes = linha.split()
             try:
-                # Tenta pegar o último elemento como valor
-                dados["Salário Base"] = partes[-1].replace("R$", "").strip()
-            except IndexError:
-                dados["Salário Base"] = "Não encontrado"
+                partes = linha.split()
+                for i, parte in enumerate(partes):
+                    if parte.lower() in ["base", "salário", "salario"] and i + 1 < len(partes):
+                        dados["Salário Base"] = partes[i + 1].replace("R$", "").strip()
+                if not dados["Salário Base"] and len(partes) > 0:  # Fallback para método antigo
+                    dados["Salário Base"] = partes[-1].replace("R$", "").strip()
+            except Exception:
+                dados["Salário Base"] = ""
         
-        # Busca por "Descontos"
-        elif "descontos totais" in linha_lower or "total descontos" in linha_lower:
-            partes = linha.split()
+        # Captura os Descontos
+        elif "total de descontos" in linha_lower or "descontos totais" in linha_lower or "total descontos" in linha_lower:
             try:
-                dados["Descontos"] = partes[-1].replace("R$", "").strip()
-            except IndexError:
-                dados["Descontos"] = "Não encontrado"
+                partes = linha.split()
+                for i, parte in enumerate(partes):
+                    if parte.lower() == "descontos" and i + 1 < len(partes):
+                        dados["Descontos"] = partes[i + 1].replace("R$", "").strip()
+                if not dados["Descontos"] and len(partes) > 0:  # Fallback para método antigo
+                    dados["Descontos"] = partes[-1].replace("R$", "").strip()
+            except Exception:
+                dados["Descontos"] = ""
         
-        # Busca por "Valor Líquido:"
-        elif "valor líquido" in linha_lower or "liquido" in linha_lower:
-            partes = linha.split()
+        # Captura o Valor Líquido
+        elif "líquido a receber" in linha_lower or "liquido a receber" in linha_lower or "valor líquido" in linha_lower or "valor liquido" in linha_lower:
             try:
-                dados["Valor Líquido"] = partes[-1].replace("R$", "").strip()
-            except IndexError:
-                dados["Valor Líquido"] = "Não encontrado"
+                partes = linha.split()
+                for i, parte in enumerate(partes):
+                    if parte.lower() in ["receber", "líquido", "liquido"] and i + 1 < len(partes):
+                        dados["Valor Líquido"] = partes[i + 1].replace("R$", "").strip()
+                if not dados["Valor Líquido"] and len(partes) > 0:  # Fallback para método antigo
+                    dados["Valor Líquido"] = partes[-1].replace("R$", "").strip()
+            except Exception:
+                dados["Valor Líquido"] = ""
     
-    # Converte os dados para DataFrame para melhor visualização
+    # Retorna os dados como DataFrame para exibição na interface
     return pd.DataFrame([dados])
 
 # Função para salvar dados extraídos
