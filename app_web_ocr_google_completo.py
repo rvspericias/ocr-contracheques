@@ -117,7 +117,7 @@ def diagnosticar_banco_dados():
         return {
             "status": "erro",
             "mensagem": str(e)
-        }
+        } 
 
 # Função para consultar histórico
 def consultar_historico(data_inicio=None, data_fim=None, filtro_nome=None, filtro_matricula=None):
