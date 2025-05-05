@@ -1,9 +1,9 @@
 streamlit
 google-cloud-vision
-pillow
 pandas
+pillow
 pdf2image
+matplotlib
 xlsxwriter
-python-dotenv
-opencv-python-headless
-numpy
+pytesseract
+reportlab
